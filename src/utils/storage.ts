@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {GameState} from '../types';
 
 const KEYS = {
   HIGH_SCORE: '@MaMatch:highScore',
@@ -26,7 +27,7 @@ export const getHighScore = async (): Promise<number> => {
 };
 
 // 게임 상태 저장
-export const saveGameState = async (state: any): Promise<void> => {
+export const saveGameState = async (state: GameState): Promise<void> => {
   try {
     await AsyncStorage.setItem(KEYS.GAME_STATE, JSON.stringify(state));
   } catch (error) {
@@ -35,7 +36,7 @@ export const saveGameState = async (state: any): Promise<void> => {
 };
 
 // 게임 상태 불러오기
-export const loadGameState = async (): Promise<any | null> => {
+export const loadGameState = async (): Promise<GameState | null> => {
   try {
     const state = await AsyncStorage.getItem(KEYS.GAME_STATE);
     return state ? JSON.parse(state) : null;
