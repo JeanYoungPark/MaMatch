@@ -1,6 +1,7 @@
 import React, {useEffect, useRef} from 'react';
 import {Animated, StyleSheet, Text} from 'react-native';
 import {SPLASH_CONFIG} from '../../constants/splash';
+import {moderateScale} from '../../utils/responsive';
 
 export const MaMatchText: React.FC = () => {
   const opacity = useRef(new Animated.Value(0)).current;
@@ -46,7 +47,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   text: {
-    fontSize: 48,
+    fontSize: moderateScale(48),
     fontWeight: '700',
     letterSpacing: 2,
     color: '#334155',

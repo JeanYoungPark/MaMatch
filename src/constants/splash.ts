@@ -94,11 +94,11 @@ export const MARBLE_POSITIONS: MarblePosition[] = [
 ];
 
 export const MARBLE_GRADIENTS = {
-  blue: {start: '#7FB1FF', end: '#4E82FF'},
-  pink: {start: '#FFA3BF', end: '#FF5B8C'},
-  yellow: {start: '#FFE794', end: '#FFC83D'},
-  mint: {start: '#8FF3CC', end: '#34D399'},
-  violet: {start: '#C4B5FD', end: '#8B5CF6'},
-  amber: {start: '#FFD58A', end: '#F59E0B'},
-  cyan: {start: '#67E8F9', end: '#22D3EE'},
+  blue: {start: '#A5C9FF', end: '#7FB1FF'},
+  pink: {start: '#FFC4D6', end: '#FFA3BF'},
+  yellow: {start: '#FFF3C4', end: '#FFE794'},
+  mint: {start: '#B4F5DF', end: '#8FF3CC'},
+  violet: {start: '#DDD6FE', end: '#C4B5FD'},
+  amber: {start: '#FFE5B4', end: '#FFD58A'},
+  cyan: {start: '#A5F3FC', end: '#7DD3FC'},
 } as const;
