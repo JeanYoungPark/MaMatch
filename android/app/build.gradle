@@ -84,6 +84,14 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+
+        // AdMob App ID
+        manifestPlaceholders = [
+            appJSONGoogleMobileAdsAppID: "ca-app-pub-3940256099942544~3347511713",
+            appJSONGoogleMobileAdsDelayAppMeasurementInit: "false",
+            appJSONGoogleMobileAdsOptimizeInitialization: "true",
+            appJSONGoogleMobileAdsOptimizeAdLoading: "true"
+        ]
     }
     signingConfigs {
         debug {

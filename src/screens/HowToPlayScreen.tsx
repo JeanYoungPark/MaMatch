@@ -4,11 +4,11 @@ import {ScreenLayout} from '../components/layout/ScreenLayout';
 import {scale, verticalScale, moderateScale} from '../utils/responsive';
 import Svg, {Path} from 'react-native-svg';
 
-interface PrivacyPolicyScreenProps {
+interface HowToPlayScreenProps {
   onClose: () => void;
 }
 
-export const PrivacyPolicyScreen: React.FC<PrivacyPolicyScreenProps> = ({
+export const HowToPlayScreen: React.FC<HowToPlayScreenProps> = ({
   onClose,
 }) => {
   return (
