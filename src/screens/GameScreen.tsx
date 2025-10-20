@@ -23,7 +23,11 @@ import Svg, {
   Stop,
   G,
 } from 'react-native-svg';
-import { BannerAd, BannerAdSize, TestIds } from 'react-native-google-mobile-ads';
+import {
+  BannerAd,
+  BannerAdSize,
+  TestIds,
+} from 'react-native-google-mobile-ads';
 
 // AdMob 배너 광고 유닛 ID (테스트용)
 const adUnitId = __DEV__
@@ -34,10 +38,12 @@ const adUnitId = __DEV__
     });
 
 type MarbleColor = 'blue' | 'pink' | 'green' | 'purple' | 'yellow' | 'cyan';
+type SpecialType = 'horizontal' | 'vertical' | 'bomb' | null;
 
 interface Marble {
   color: MarbleColor;
   id: string;
+  specialType?: SpecialType; // 특수 아이템 타입
   animatedValue?: Animated.Value;
   scaleValue?: Animated.Value;
   translateX?: Animated.Value;
@@ -90,9 +96,17 @@ const initializeGrid = (): (Marble | null)[][] => {
   return grid;
 };
 
-// 3개 이상 매칭된 구슬 찾기
-const findMatches = (grid: (Marble | null)[][]): Set<string> => {
+// 3개 이상 매칭된 구슬 찾기 (4개 이상 매칭 시 특수 아이템 생성 정보 포함)
+const findMatches = (
+  grid: (Marble | null)[][],
+): {
+  matchedIds: Set<string>;
+  specialItems: Array<{ row: number; col: number; type: SpecialType; color: MarbleColor }>;
+  matchedSpecialItems: Array<{ row: number; col: number; type: SpecialType }>;
+} => {
   const matchedIds = new Set<string>();
+  const specialItems: Array<{ row: number; col: number; type: SpecialType; color: MarbleColor }> = [];
+  const matchedSpecialItems: Array<{ row: number; col: number; type: SpecialType }> = [];
 
   // 가로 방향 체크
   for (let row = 0; row < GRID_SIZE; row++) {
@@ -108,21 +122,60 @@ const findMatches = (grid: (Marble | null)[][]): Set<string> => {
         marble1.color === marble2.color &&
         marble2.color === marble3.color
       ) {
-        matchedIds.add(marble1.id);
-        matchedIds.add(marble2.id);
-        matchedIds.add(marble3.id);
+        const matchStart = col;
+        let matchEnd = col + 2;
 
         // 3개 이상 연속인 경우 계속 추가
         let extraCol = col + 3;
         while (extraCol < GRID_SIZE) {
           const extraMarble = grid[row][extraCol];
           if (extraMarble && extraMarble.color === marble1.color) {
-            matchedIds.add(extraMarble.id);
+            matchEnd = extraCol;
             extraCol++;
           } else {
             break;
           }
         }
+
+        // 매칭된 구슬들 추가 및 특수 아이템 확인
+        for (let c = matchStart; c <= matchEnd; c++) {
+          const marble = grid[row][c]!;
+          matchedIds.add(marble.id);
+
+          // 매칭된 구슬이 특수 아이템이면 추적
+          if (marble.specialType) {
+            matchedSpecialItems.push({
+              row,
+              col: c,
+              type: marble.specialType,
+            });
+          }
+        }
+
+        // 4개 이상 매칭 시 특수 아이템 생성
+        const matchCount = matchEnd - matchStart + 1;
+        if (matchCount >= 5) {
+          // 5개 이상 → 폭탄 (주변 3x3 파괴)
+          const centerCol = Math.floor((matchStart + matchEnd) / 2);
+          specialItems.push({
+            row,
+            col: centerCol,
+            type: 'bomb',
+            color: marble1.color,
+          });
+        } else if (matchCount === 4) {
+          // 4개 → 세로 파괴 아이템 (가로 매칭)
+          const centerCol = Math.floor((matchStart + matchEnd) / 2);
+          specialItems.push({
+            row,
+            col: centerCol,
+            type: 'vertical',
+            color: marble1.color,
+          });
+        }
+
+        // 이미 처리한 부분은 건너뛰기
+        col = matchEnd;
       }
     }
   }
@@ -141,26 +194,110 @@ const findMatches = (grid: (Marble | null)[][]): Set<string> => {
         marble1.color === marble2.color &&
         marble2.color === marble3.color
       ) {
-        matchedIds.add(marble1.id);
-        matchedIds.add(marble2.id);
-        matchedIds.add(marble3.id);
+        const matchStart = row;
+        let matchEnd = row + 2;
 
         // 3개 이상 연속인 경우 계속 추가
         let extraRow = row + 3;
         while (extraRow < GRID_SIZE) {
           const extraMarble = grid[extraRow][col];
           if (extraMarble && extraMarble.color === marble1.color) {
-            matchedIds.add(extraMarble.id);
+            matchEnd = extraRow;
             extraRow++;
           } else {
             break;
           }
         }
+
+        // 매칭된 구슬들 추가 및 특수 아이템 확인
+        for (let r = matchStart; r <= matchEnd; r++) {
+          const marble = grid[r][col]!;
+          matchedIds.add(marble.id);
+
+          // 매칭된 구슬이 특수 아이템이면 추적
+          if (marble.specialType) {
+            matchedSpecialItems.push({
+              row: r,
+              col,
+              type: marble.specialType,
+            });
+          }
+        }
+
+        // 4개 이상 매칭 시 특수 아이템 생성
+        const matchCount = matchEnd - matchStart + 1;
+        if (matchCount >= 5) {
+          // 5개 이상 → 폭탄 (주변 3x3 파괴)
+          const centerRow = Math.floor((matchStart + matchEnd) / 2);
+          specialItems.push({
+            row: centerRow,
+            col,
+            type: 'bomb',
+            color: marble1.color,
+          });
+        } else if (matchCount === 4) {
+          // 4개 → 가로 파괴 아이템 (세로 매칭)
+          const centerRow = Math.floor((matchStart + matchEnd) / 2);
+          specialItems.push({
+            row: centerRow,
+            col,
+            type: 'horizontal',
+            color: marble1.color,
+          });
+        }
+
+        // 이미 처리한 부분은 건너뛰기
+        row = matchEnd;
       }
     }
   }
 
-  return matchedIds;
+  return { matchedIds, specialItems, matchedSpecialItems };
+};
+
+// 가능한 이동이 있는지 체크
+const hasPossibleMoves = (grid: (Marble | null)[][]): boolean => {
+  // 1. 특수 아이템이 있는지 확인
+  for (let row = 0; row < GRID_SIZE; row++) {
+    for (let col = 0; col < GRID_SIZE; col++) {
+      if (grid[row][col]?.specialType) {
+        return true; // 특수 아이템이 있으면 항상 이동 가능
+      }
+    }
+  }
+
+  // 2. 스왑으로 매칭을 만들 수 있는지 확인
+  for (let row = 0; row < GRID_SIZE; row++) {
+    for (let col = 0; col < GRID_SIZE; col++) {
+      // 오른쪽과 스왑
+      if (col < GRID_SIZE - 1) {
+        const testGrid = grid.map(r => [...r]);
+        const temp = testGrid[row][col];
+        testGrid[row][col] = testGrid[row][col + 1];
+        testGrid[row][col + 1] = temp;
+
+        const { matchedIds } = findMatches(testGrid);
+        if (matchedIds.size > 0) {
+          return true;
+        }
+      }
+
+      // 아래쪽과 스왑
+      if (row < GRID_SIZE - 1) {
+        const testGrid = grid.map(r => [...r]);
+        const temp = testGrid[row][col];
+        testGrid[row][col] = testGrid[row + 1][col];
+        testGrid[row + 1][col] = temp;
+
+        const { matchedIds } = findMatches(testGrid);
+        if (matchedIds.size > 0) {
+          return true;
+        }
+      }
+    }
+  }
+
+  return false; // 가능한 이동이 없음
 };
 
 export const GameScreen: React.FC = () => {
@@ -174,17 +311,13 @@ export const GameScreen: React.FC = () => {
     col: number;
   } | null>(null);
   const [comboCount, setComboCount] = useState(0);
-  const [comboPosition, setComboPosition] = useState({x: 0, y: 0});
+  const [comboPosition, setComboPosition] = useState({ x: 0, y: 0 });
+  const [isGameOver, setIsGameOver] = useState(false);
   const comboOpacity = useRef(new Animated.Value(0)).current;
   const comboScale = useRef(new Animated.Value(0.5)).current;
 
   // 비동기 작업 추적
   const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-
-  // timeout 추가 헬퍼
-  const addTimeout = (timeout: ReturnType<typeof setTimeout>) => {
-    timeoutsRef.current.push(timeout);
-  };
 
   // 모든 timeout 취소
   const clearAllTimeouts = () => {
@@ -192,8 +325,8 @@ export const GameScreen: React.FC = () => {
     timeoutsRef.current = [];
   };
 
-  // 구슬 낙하 로직 - 빈 공간 위의 구슬들을 아래로 이동
-  const dropMarbles = (
+  // 1단계: 구슬 낙하 준비 (Animated.Value만 설정, 애니메이션 시작 안 함)
+  const prepareDropMarbles = (
     currentGrid: (Marble | null)[][],
   ): (Marble | null)[][] => {
     const newGrid = currentGrid.map(row => [...row]);
@@ -215,22 +348,15 @@ export const GameScreen: React.FC = () => {
           const { marble, fromRow } = marblesInColumn[marbleIndex];
           const dropDistance = row - fromRow; // 떨어지는 거리
 
-          // 애니메이션 값 설정
+          // 애니메이션 값 설정 (시작은 안 함)
           if (dropDistance > 0) {
-            const animValue = new Animated.Value(-dropDistance * CELL_SIZE);
-            marble.animatedValue = animValue;
+            marble.animatedValue = new Animated.Value(
+              -dropDistance * CELL_SIZE,
+            );
             marble.scaleValue = new Animated.Value(1);
             marble.translateX = new Animated.Value(0);
             marble.translateY = new Animated.Value(0);
             marble.opacityValue = new Animated.Value(1);
-
-            // 탄성 있는 애니메이션 실행
-            Animated.timing(animValue, {
-              toValue: 0,
-              duration: 400,
-              easing: Easing.bounce,
-              useNativeDriver: true,
-            }).start();
           } else {
             marble.animatedValue = new Animated.Value(0);
             marble.scaleValue = new Animated.Value(1);
@@ -247,6 +373,26 @@ export const GameScreen: React.FC = () => {
     }
 
     return newGrid;
+  };
+
+  // 2단계: 낙하 애니메이션 시작
+  const startDropAnimations = (currentGrid: (Marble | null)[][]) => {
+    currentGrid.forEach(row => {
+      row.forEach(marble => {
+        if (marble && marble.animatedValue) {
+          const currentValue = (marble.animatedValue as any)._value;
+          // 초기 위치가 0이 아니면 (떨어져야 하면) 애니메이션 시작
+          if (currentValue !== 0) {
+            Animated.timing(marble.animatedValue, {
+              toValue: 0,
+              duration: 400,
+              easing: Easing.bounce,
+              useNativeDriver: true,
+            }).start();
+          }
+        }
+      });
+    });
   };
 
   // 빈 공간을 새 구슬로 채우기
@@ -332,8 +478,43 @@ export const GameScreen: React.FC = () => {
   };
 
   // 매칭된 구슬 제거 및 점수 계산
-  const checkAndRemoveMatches = (currentGrid: (Marble | null)[][], currentCombo: number = 0) => {
-    const matchedIds = findMatches(currentGrid);
+  const checkAndRemoveMatches = (
+    currentGrid: (Marble | null)[][],
+    currentCombo: number = 0,
+  ) => {
+    const { matchedIds, specialItems, matchedSpecialItems } = findMatches(currentGrid);
+
+    // 매칭된 특수 아이템들의 효과를 추가로 적용
+    const additionalRemoveIds = new Set<string>();
+    matchedSpecialItems.forEach(({ row, col, type }) => {
+      if (type === 'horizontal') {
+        // 가로 줄 전체 추가 제거
+        for (let c = 0; c < GRID_SIZE; c++) {
+          if (currentGrid[row][c]) {
+            additionalRemoveIds.add(currentGrid[row][c]!.id);
+          }
+        }
+      } else if (type === 'vertical') {
+        // 세로 줄 전체 추가 제거
+        for (let r = 0; r < GRID_SIZE; r++) {
+          if (currentGrid[r][col]) {
+            additionalRemoveIds.add(currentGrid[r][col]!.id);
+          }
+        }
+      } else if (type === 'bomb') {
+        // 주변 3x3 영역 추가 제거
+        for (let r = Math.max(0, row - 1); r <= Math.min(GRID_SIZE - 1, row + 1); r++) {
+          for (let c = Math.max(0, col - 1); c <= Math.min(GRID_SIZE - 1, col + 1); c++) {
+            if (currentGrid[r][c]) {
+              additionalRemoveIds.add(currentGrid[r][c]!.id);
+            }
+          }
+        }
+      }
+    });
+
+    // 기존 매칭과 특수 아이템 효과 합치기
+    additionalRemoveIds.forEach(id => matchedIds.add(id));
 
     if (matchedIds.size > 0) {
       // 콤보 증가
@@ -398,37 +579,92 @@ export const GameScreen: React.FC = () => {
         });
       });
 
-      // 250ms 후에 매칭된 구슬 제거 (pop 애니메이션 완료 후)
-      setTimeout(() => {
-        let newGrid = currentGrid.map(row =>
-          row.map(marble =>
-            marble && matchedIds.has(marble.id) ? null : marble,
-          ),
-        );
-
-        setGrid(newGrid);
-
-        // 200ms 후에 구슬 낙하
+      // 매칭된 구슬 제거 (pop 애니메이션 완료 후)
+      requestAnimationFrame(() => {
         setTimeout(() => {
-          newGrid = dropMarbles(newGrid);
-          setGrid(newGrid);
+          let newGrid = currentGrid.map(row =>
+            row.map(marble =>
+              marble && matchedIds.has(marble.id) ? null : marble,
+            ),
+          );
 
-          // 400ms 후에 빈 공간 채우기 (bounce 애니메이션 완료 대기)
-          setTimeout(() => {
-            newGrid = fillEmptySpaces(newGrid);
-            setGrid(newGrid);
+          // 특수 아이템 생성 (4개 이상 매칭 시)
+          specialItems.forEach(({ row, col, type, color }) => {
+            if (newGrid[row][col] === null) {
+              newGrid[row][col] = {
+                color,
+                id: `special-${row}-${col}-${Date.now()}`,
+                specialType: type,
+                animatedValue: new Animated.Value(0),
+                scaleValue: new Animated.Value(0.5), // 작게 시작
+                translateX: new Animated.Value(0),
+                translateY: new Animated.Value(0),
+                opacityValue: new Animated.Value(0), // 투명하게 시작
+              };
 
-            // 500ms 후에 다시 매칭 체크 (연쇄 반응)
+              // 특수 아이템 등장 애니메이션
+              const specialMarble = newGrid[row][col]!;
+              Animated.parallel([
+                Animated.spring(specialMarble.scaleValue!, {
+                  toValue: 1.2, // 일반 구슬보다 약간 큼
+                  friction: 5,
+                  tension: 100,
+                  useNativeDriver: true,
+                }),
+                Animated.timing(specialMarble.opacityValue!, {
+                  toValue: 1,
+                  duration: 300,
+                  easing: Easing.out(Easing.ease),
+                  useNativeDriver: true,
+                }),
+              ]).start();
+            }
+          });
+
+          requestAnimationFrame(() => {
             setTimeout(() => {
-              checkAndRemoveMatches(newGrid, newCombo);
-            }, 500);
-          }, 400);
-        }, 200);
-      }, 250);
+              setGrid(newGrid);
+            }, 100);
+          });
+
+          // 구슬 낙하
+          requestAnimationFrame(() => {
+            setTimeout(() => {
+              newGrid = prepareDropMarbles(newGrid);
+              setGrid(newGrid);
+
+              // 렌더링 완료 후 애니메이션 시작
+              requestAnimationFrame(() => {
+                startDropAnimations(newGrid);
+
+                // drop 애니메이션 완료 후 빈 공간 채우기
+                requestAnimationFrame(() => {
+                  setTimeout(() => {
+                    newGrid = fillEmptySpaces(newGrid);
+                    setGrid(newGrid);
+
+                    // fill 애니메이션 완료 후 재매칭
+                    requestAnimationFrame(() => {
+                      setTimeout(() => {
+                        checkAndRemoveMatches(newGrid, newCombo);
+                      }, 100);
+                    });
+                  }, 400);
+                });
+              });
+            }, 100);
+          });
+        }, 100);
+      });
     } else {
       // 매칭이 없으면 콤보 초기화
       if (currentCombo > 0) {
         setComboCount(0);
+      }
+
+      // 가능한 이동이 있는지 체크
+      if (!hasPossibleMoves(currentGrid)) {
+        setIsGameOver(true);
       }
     }
   };
@@ -439,10 +675,11 @@ export const GameScreen: React.FC = () => {
     setGrid(newGrid);
     setComboCount(0);
 
-    // 0.7초 후 초기 그리드에서 매칭 체크 및 제거
-    setTimeout(() => {
-      checkAndRemoveMatches(newGrid, 0);
-    }, 700);
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        checkAndRemoveMatches(newGrid, 0);
+      }, 500);
+    });
   }, [gameKey]);
 
   const handleNewGame = () => {
@@ -453,10 +690,234 @@ export const GameScreen: React.FC = () => {
     setCurrentScore(0);
     setSelectedCell(null);
     setComboCount(0);
+    setIsGameOver(false);
     comboOpacity.setValue(0);
 
     // gameKey만 변경하면 useEffect에서 자동으로 새 그리드 생성
     setGameKey(prev => prev + 1);
+  };
+
+  // 특수 아이템 효과를 연쇄적으로 수집하는 함수
+  const collectSpecialItemEffects = (
+    currentGrid: (Marble | null)[][],
+    row: number,
+    col: number,
+    visited: Set<string>,
+  ): { itemsToRemove: Set<string>; activatedCount: number } => {
+    const marble = currentGrid[row][col];
+    if (!marble || !marble.specialType || visited.has(marble.id)) {
+      return { itemsToRemove: new Set(), activatedCount: 0 };
+    }
+
+    visited.add(marble.id);
+    let activatedCount = 1;
+    const itemsToRemove = new Set<string>();
+
+    // 현재 특수 아이템 효과 적용
+    if (marble.specialType === 'horizontal') {
+      // 가로 줄 전체 제거
+      for (let c = 0; c < GRID_SIZE; c++) {
+        if (currentGrid[row][c]) {
+          itemsToRemove.add(currentGrid[row][c]!.id);
+        }
+      }
+    } else if (marble.specialType === 'vertical') {
+      // 세로 줄 전체 제거
+      for (let r = 0; r < GRID_SIZE; r++) {
+        if (currentGrid[r][col]) {
+          itemsToRemove.add(currentGrid[r][col]!.id);
+        }
+      }
+    } else if (marble.specialType === 'bomb') {
+      // 주변 3x3 영역 제거
+      for (let r = Math.max(0, row - 1); r <= Math.min(GRID_SIZE - 1, row + 1); r++) {
+        for (let c = Math.max(0, col - 1); c <= Math.min(GRID_SIZE - 1, col + 1); c++) {
+          if (currentGrid[r][c]) {
+            itemsToRemove.add(currentGrid[r][c]!.id);
+          }
+        }
+      }
+    }
+
+    // 제거될 구슬 중 특수 아이템 찾아서 재귀 호출 (연쇄 반응)
+    currentGrid.forEach((rowArray, r) => {
+      rowArray.forEach((m, c) => {
+        if (m && itemsToRemove.has(m.id) && m.specialType && !visited.has(m.id)) {
+          const chainResult = collectSpecialItemEffects(currentGrid, r, c, visited);
+          chainResult.itemsToRemove.forEach(id => itemsToRemove.add(id));
+          activatedCount += chainResult.activatedCount;
+        }
+      });
+    });
+
+    return { itemsToRemove, activatedCount };
+  };
+
+  // 특수 아이템 조합 효과 (아이템 + 아이템)
+  const activateComboEffect = (
+    row1: number,
+    col1: number,
+    row2: number,
+    col2: number,
+    currentGrid: (Marble | null)[][],
+  ) => {
+    const marble1 = currentGrid[row1][col1];
+    const marble2 = currentGrid[row2][col2];
+
+    if (!marble1?.specialType || !marble2?.specialType) return;
+
+    const newGrid = currentGrid.map(r => [...r]);
+    const itemsToRemove = new Set<string>();
+
+    // 가로 + 세로 = 십자가 모양
+    if (
+      (marble1.specialType === 'horizontal' && marble2.specialType === 'vertical') ||
+      (marble1.specialType === 'vertical' && marble2.specialType === 'horizontal')
+    ) {
+      // 첫 번째 아이템 위치 기준으로 십자가
+      // 가로줄
+      for (let c = 0; c < GRID_SIZE; c++) {
+        if (newGrid[row1][c]) {
+          itemsToRemove.add(newGrid[row1][c]!.id);
+        }
+      }
+      // 세로줄
+      for (let r = 0; r < GRID_SIZE; r++) {
+        if (newGrid[r][col1]) {
+          itemsToRemove.add(newGrid[r][col1]!.id);
+        }
+      }
+    }
+    // 폭탄 + 폭탄 = 5x5 범위
+    else if (marble1.specialType === 'bomb' && marble2.specialType === 'bomb') {
+      // 첫 번째 폭탄 위치 기준으로 5x5
+      for (let r = Math.max(0, row1 - 2); r <= Math.min(GRID_SIZE - 1, row1 + 2); r++) {
+        for (let c = Math.max(0, col1 - 2); c <= Math.min(GRID_SIZE - 1, col1 + 2); c++) {
+          if (newGrid[r][c]) {
+            itemsToRemove.add(newGrid[r][c]!.id);
+          }
+        }
+      }
+    }
+
+    // 제거 애니메이션
+    itemsToRemove.forEach(id => {
+      newGrid.forEach(row => {
+        row.forEach(marble => {
+          if (marble && marble.id === id && marble.scaleValue) {
+            Animated.timing(marble.scaleValue, {
+              toValue: 0,
+              duration: 200,
+              easing: Easing.in(Easing.ease),
+              useNativeDriver: true,
+            }).start();
+          }
+        });
+      });
+    });
+
+    // 제거 후 처리
+    setTimeout(() => {
+      const clearedGrid = newGrid.map(row =>
+        row.map(marble => (marble && itemsToRemove.has(marble.id) ? null : marble))
+      );
+
+      // 점수 추가 (조합 효과는 더 높은 점수)
+      setCurrentScore(prev => prev + itemsToRemove.size * 20);
+
+      setGrid(clearedGrid);
+
+      // 구슬 낙하 및 재매칭
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          let newGrid = prepareDropMarbles(clearedGrid);
+          setGrid(newGrid);
+
+          requestAnimationFrame(() => {
+            startDropAnimations(newGrid);
+
+            requestAnimationFrame(() => {
+              setTimeout(() => {
+                newGrid = fillEmptySpaces(newGrid);
+                setGrid(newGrid);
+
+                requestAnimationFrame(() => {
+                  setTimeout(() => {
+                    checkAndRemoveMatches(newGrid, 0);
+                  }, 100);
+                });
+              }, 400);
+            });
+          });
+        }, 100);
+      });
+    }, 200);
+  };
+
+  // 특수 아이템 활성화 (연쇄 반응 포함)
+  const activateSpecialItem = (row: number, col: number, currentGrid?: (Marble | null)[][]) => {
+    const gridToUse = currentGrid || grid;
+    const marble = gridToUse[row][col];
+    if (!marble || !marble.specialType) return;
+
+    const newGrid = gridToUse.map(r => [...r]);
+    const visited = new Set<string>();
+
+    // 연쇄 반응 포함하여 모든 효과 수집
+    const { itemsToRemove, activatedCount } = collectSpecialItemEffects(newGrid, row, col, visited);
+
+    // 제거 애니메이션
+    itemsToRemove.forEach(id => {
+      newGrid.forEach(row => {
+        row.forEach(marble => {
+          if (marble && marble.id === id && marble.scaleValue) {
+            Animated.timing(marble.scaleValue, {
+              toValue: 0,
+              duration: 200,
+              easing: Easing.in(Easing.ease),
+              useNativeDriver: true,
+            }).start();
+          }
+        });
+      });
+    });
+
+    // 제거 후 처리
+    setTimeout(() => {
+      const clearedGrid = newGrid.map(row =>
+        row.map(marble => (marble && itemsToRemove.has(marble.id) ? null : marble))
+      );
+
+      // 점수 추가 (각 활성화된 아이템마다 점수)
+      setCurrentScore(prev => prev + activatedCount * 15);
+
+      setGrid(clearedGrid);
+
+      // 구슬 낙하 및 재매칭
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          let newGrid = prepareDropMarbles(clearedGrid);
+          setGrid(newGrid);
+
+          requestAnimationFrame(() => {
+            startDropAnimations(newGrid);
+
+            requestAnimationFrame(() => {
+              setTimeout(() => {
+                newGrid = fillEmptySpaces(newGrid);
+                setGrid(newGrid);
+
+                requestAnimationFrame(() => {
+                  setTimeout(() => {
+                    checkAndRemoveMatches(newGrid, 0);
+                  }, 100);
+                });
+              }, 400);
+            });
+          });
+        }, 100);
+      });
+    }, 200);
   };
 
   const handleCellPress = (row: number, col: number) => {
@@ -546,17 +1007,42 @@ export const GameScreen: React.FC = () => {
           marble2.translateY?.setValue(0);
         });
 
-        // 매칭 체크
+        // 스왑 후 매칭 확인 (매칭 우선, 없으면 아이템 실행)
         setTimeout(() => {
-          const matchedIds = findMatches(newGrid);
+          const swappedMarble1 = newGrid[row2][col2]; // marble1이 이동한 위치
+          const swappedMarble2 = newGrid[row1][col1]; // marble2가 이동한 위치
+
+          // 1. 먼저 아이템 + 아이템 조합 체크
+          if (swappedMarble1?.specialType && swappedMarble2?.specialType) {
+            setComboCount(0);
+            activateComboEffect(row2, col2, row1, col1, newGrid);
+            return;
+          }
+
+          // 2. 매칭 체크
+          const { matchedIds } = findMatches(newGrid);
 
           if (matchedIds.size > 0) {
-            // 매칭이 있으면 콤보 리셋하고 제거 프로세스 시작
+            // 매칭이 있으면 콤보 리셋하고 제거 프로세스 시작 (매칭된 특수 아이템도 자동 실행됨)
             setComboCount(0);
             checkAndRemoveMatches(newGrid, 0);
           } else {
-            // 매칭이 없으면 원래대로 복구
-            swapBack(row1, col1, row2, col2, newGrid);
+            // 3. 매칭이 없으면 스왑한 구슬에 특수 아이템이 있는지 확인
+            const hasSpecialItem = swappedMarble1?.specialType || swappedMarble2?.specialType;
+
+            if (hasSpecialItem) {
+              // 특수 아이템이 있으면 해당 아이템만 활성화
+              setComboCount(0);
+
+              if (swappedMarble1?.specialType) {
+                activateSpecialItem(row2, col2, newGrid);
+              } else if (swappedMarble2?.specialType) {
+                activateSpecialItem(row1, col1, newGrid);
+              }
+            } else {
+              // 매칭도 없고 특수 아이템도 없으면 원래대로 복구
+              swapBack(row1, col1, row2, col2, newGrid);
+            }
           }
         }, 100);
       });
@@ -774,6 +1260,81 @@ export const GameScreen: React.FC = () => {
                               r="8"
                               fill={`url(#gloss-${marble.id})`}
                             />
+                            {/* 특수 아이템 화살표 표시 */}
+                            {marble.specialType === 'horizontal' && (
+                              <G>
+                                {/* 좌측 화살표 */}
+                                <Path
+                                  d="M12 20 L7 20 L10 17 M7 20 L10 23"
+                                  stroke="#FFF"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  fill="none"
+                                />
+                                {/* 우측 화살표 */}
+                                <Path
+                                  d="M28 20 L33 20 L30 17 M33 20 L30 23"
+                                  stroke="#FFF"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  fill="none"
+                                />
+                              </G>
+                            )}
+                            {marble.specialType === 'vertical' && (
+                              <G>
+                                {/* 상단 화살표 */}
+                                <Path
+                                  d="M20 12 L20 7 L17 10 M20 7 L23 10"
+                                  stroke="#FFF"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  fill="none"
+                                />
+                                {/* 하단 화살표 */}
+                                <Path
+                                  d="M20 28 L20 33 L17 30 M20 33 L23 30"
+                                  stroke="#FFF"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  fill="none"
+                                />
+                              </G>
+                            )}
+                            {marble.specialType === 'bomb' && (
+                              <G>
+                                {/* 폭탄 아이콘 - 별모양 폭발 */}
+                                {/* 중앙 원 */}
+                                <Circle
+                                  cx="20"
+                                  cy="20"
+                                  r="4"
+                                  fill="#FFF"
+                                  opacity="0.9"
+                                />
+                                {/* 폭발 선들 (8방향) */}
+                                <Path
+                                  d="M20 12 L20 8 M20 28 L20 32 M12 20 L8 20 M28 20 L32 20 M14 14 L11 11 M26 26 L29 29 M26 14 L29 11 M14 26 L11 29"
+                                  stroke="#FFF"
+                                  strokeWidth="2.5"
+                                  strokeLinecap="round"
+                                  opacity="0.9"
+                                />
+                                {/* 작은 폭발 점들 */}
+                                <Circle cx="20" cy="6" r="1.5" fill="#FFF" opacity="0.8" />
+                                <Circle cx="20" cy="34" r="1.5" fill="#FFF" opacity="0.8" />
+                                <Circle cx="6" cy="20" r="1.5" fill="#FFF" opacity="0.8" />
+                                <Circle cx="34" cy="20" r="1.5" fill="#FFF" opacity="0.8" />
+                                <Circle cx="9" cy="9" r="1.5" fill="#FFF" opacity="0.8" />
+                                <Circle cx="31" cy="31" r="1.5" fill="#FFF" opacity="0.8" />
+                                <Circle cx="31" cy="9" r="1.5" fill="#FFF" opacity="0.8" />
+                                <Circle cx="9" cy="31" r="1.5" fill="#FFF" opacity="0.8" />
+                              </G>
+                            )}
                           </G>
                         </Svg>
                       </Animated.View>
@@ -792,18 +1353,17 @@ export const GameScreen: React.FC = () => {
                       left: comboPosition.x + scale(10),
                       top: comboPosition.y - verticalScale(20),
                       opacity: comboOpacity,
-                      transform: [
-                        {scale: comboScale},
-                        {rotate: '-15deg'},
-                      ],
+                      transform: [{ scale: comboScale }, { rotate: '-15deg' }],
                       zIndex: 100,
                     },
-                  ]}>
+                  ]}
+                >
                   <LinearGradient
                     colors={['#FFA3BF', '#C4A3FF']}
-                    start={{x: 0, y: 0}}
-                    end={{x: 1, y: 1}}
-                    style={styles.comboGradient}>
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.comboGradient}
+                  >
                     <View style={styles.comboContent}>
                       <Text style={styles.comboText}>COMBO</Text>
                       <Text style={styles.comboNumber}>x{comboCount}</Text>
@@ -825,6 +1385,39 @@ export const GameScreen: React.FC = () => {
             />
           </View>
         </View>
+
+        {/* Game Over Modal */}
+        {isGameOver && (
+          <View style={styles.gameOverOverlay}>
+            <View style={styles.gameOverModal}>
+              <Text style={styles.gameOverTitle}>게임 오버!</Text>
+              <Text style={styles.gameOverMessage}>
+                더 이상 이동할 수 있는 조합이 없습니다
+              </Text>
+              <View style={styles.gameOverScore}>
+                <Text style={styles.gameOverScoreLabel}>최종 점수</Text>
+                <Text style={styles.gameOverScoreValue}>{currentScore}</Text>
+              </View>
+              <View style={styles.gameOverButtons}>
+                <Button
+                  title="새 게임"
+                  variant="primary"
+                  size="medium"
+                  color="blue"
+                  onPress={handleNewGame}
+                />
+                <View style={{ height: verticalScale(12) }} />
+                <Button
+                  title="메인으로"
+                  variant="secondary"
+                  size="medium"
+                  color="blue"
+                  onPress={() => navigation.goBack()}
+                />
+              </View>
+            </View>
+          </View>
+        )}
       </LinearGradient>
     </ScreenLayout>
   );
@@ -886,7 +1479,7 @@ const styles = StyleSheet.create({
   },
   comboContainer: {
     shadowColor: '#C4A3FF',
-    shadowOffset: {width: 0, height: 3},
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
     shadowRadius: 6,
     elevation: 5,
@@ -909,7 +1502,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     textShadowColor: 'rgba(107, 33, 168, 0.4)',
-    textShadowOffset: {width: 0, height: 1},
+    textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
     letterSpacing: 1,
   },
@@ -918,7 +1511,7 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     color: '#FFFFFF',
     textShadowColor: 'rgba(107, 33, 168, 0.5)',
-    textShadowOffset: {width: 0, height: 2},
+    textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
     marginTop: verticalScale(-1),
   },
@@ -950,5 +1543,62 @@ const styles = StyleSheet.create({
     borderColor: '#FFC83D',
     borderWidth: 2,
     transform: [{ scale: 1.1 }],
+  },
+  gameOverOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  gameOverModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: moderateScale(24),
+    padding: scale(32),
+    alignItems: 'center',
+    width: scale(300),
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  gameOverTitle: {
+    fontSize: moderateScale(32),
+    fontWeight: '900',
+    color: '#1E293B',
+    marginBottom: verticalScale(12),
+  },
+  gameOverMessage: {
+    fontSize: moderateScale(14),
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: verticalScale(24),
+  },
+  gameOverScore: {
+    backgroundColor: '#F1F5F9',
+    borderRadius: moderateScale(16),
+    padding: scale(20),
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: verticalScale(24),
+  },
+  gameOverScoreLabel: {
+    fontSize: moderateScale(12),
+    color: '#64748B',
+    fontWeight: '600',
+    marginBottom: verticalScale(8),
+  },
+  gameOverScoreValue: {
+    fontSize: moderateScale(36),
+    fontWeight: '900',
+    color: '#1E40AF',
+  },
+  gameOverButtons: {
+    width: '100%',
   },
 });
